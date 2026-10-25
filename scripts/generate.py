@@ -378,24 +378,42 @@ def stars(th, series, now):
 
 
 # ---------------------------------------------------------------- data
-def gql(query, variables, token):
+def _gql_once(query, variables, token):
     body = json.dumps({"query": query, "variables": variables}).encode()
+    req = urllib.request.Request(
+        "https://api.github.com/graphql", data=body,
+        headers={"Authorization": f"bearer {token}", "Content-Type": "application/json",
+                 "User-Agent": "profile-generator"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        d = json.load(r)
+    if d.get("errors"):
+        raise RuntimeError(json.dumps(d["errors"])[:500])
+    return d["data"]
+
+
+def gql_raise(query, variables, token):
+    """Like gql() but raises on failure (HTTPError / RuntimeError) instead of SystemExit."""
     last = None
     for attempt in range(3):
         try:
-            req = urllib.request.Request(
-                "https://api.github.com/graphql", data=body,
-                headers={"Authorization": f"bearer {token}", "Content-Type": "application/json",
-                         "User-Agent": "profile-generator"})
-            with urllib.request.urlopen(req, timeout=60) as r:
-                d = json.load(r)
-            if d.get("errors"):
-                raise RuntimeError(json.dumps(d["errors"])[:500])
-            return d["data"]
+            return _gql_once(query, variables, token)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403, 404):
+                raise
+            last = e
+        except RuntimeError:
+            raise
         except Exception as e:  # noqa: BLE001
             last = e
-            time.sleep(2 * (attempt + 1))
-    raise SystemExit(f"GraphQL failed: {last}")
+        time.sleep(2 * (attempt + 1))
+    raise last
+
+
+def gql(query, variables, token):
+    try:
+        return gql_raise(query, variables, token)
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"GraphQL failed: {e}")
 
 
 Q_MAIN = """query($login:String!){ user(login:$login){ createdAt
@@ -407,40 +425,79 @@ def parse(s):
     return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def fetch_star_times(login, name, token):
+Q_STARS = """query($o:String!,$n:String!,$after:String){ repository(owner:$o,name:$n){
+ stargazers(first:100, after:$after, orderBy:{field:STARRED_AT, direction:ASC}){
+  pageInfo{ hasNextPage endCursor } edges{ starredAt }}}}"""
+
+
+def _fail(method, name, e):
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            body = e.read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            body = ""
+        msg = f"HTTP {e.code} {body[:300]}"
+    else:
+        msg = str(e)[:300]
+    print(f"stargazers[{name}] {method}: {msg}", file=sys.stderr)
+
+
+def _stars_graphql(login, name, token):
+    times, after = [], None
+    while True:
+        d = gql_raise(Q_STARS, {"o": login, "n": name, "after": after}, token)
+        sg = d["repository"]["stargazers"]
+        times += [parse(e["starredAt"]) for e in sg["edges"]]
+        if not sg["pageInfo"]["hasNextPage"]:
+            return times
+        after = sg["pageInfo"]["endCursor"]
+
+
+def _stars_rest(login, name, token):
     times, page = [], 1
     while True:
         url = f"https://api.github.com/repos/{login}/{name}/stargazers?per_page=100&page={page}"
+        hdr = {"Accept": "application/vnd.github.star+json",
+               "User-Agent": "profile-generator",
+               "X-GitHub-Api-Version": "2022-11-28"}
+        if token:
+            hdr["Authorization"] = f"Bearer {token}"
         items, last = None, None
-        # The Actions token gets 403 on this endpoint; public repos work unauthenticated.
-        for use_token in (True, False):
-            hdr = {"Accept": "application/vnd.github.star+json",
-                   "User-Agent": "profile-generator",
-                   "X-GitHub-Api-Version": "2022-11-28"}
-            if use_token and token:
-                hdr["Authorization"] = f"Bearer {token}"
-            for attempt in range(3):
-                try:
-                    with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=60) as r:
-                        items = json.load(r)
-                    break
-                except urllib.error.HTTPError as e:
-                    last = e
-                    if e.code in (401, 403):
-                        break
-                    time.sleep(2 * (attempt + 1))
-                except Exception as e:  # noqa: BLE001
-                    last = e
-                    time.sleep(2 * (attempt + 1))
-            if items is not None:
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=60) as r:
+                    items = json.load(r)
                 break
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403, 404):
+                    raise
+                last = e
+            except Exception as e:  # noqa: BLE001
+                last = e
+            time.sleep(2 * (attempt + 1))
         if items is None:
-            print(f"warning: could not fetch stargazers for {name}: {last}", file=sys.stderr)
-            return None
+            raise last
         times += [parse(i["starred_at"]) for i in items]
         if len(items) < 100:
             return times
         page += 1
+
+
+def fetch_star_times(login, name, token):
+    methods = []
+    if token:
+        methods.append(("graphql", lambda: _stars_graphql(login, name, token)))
+        methods.append(("rest+token", lambda: _stars_rest(login, name, token)))
+    methods.append(("rest-anon", lambda: _stars_rest(login, name, None)))
+    for method, fn in methods:
+        try:
+            times = fn()
+            print(f"stargazers[{name}]: fetched {len(times)} via {method}", file=sys.stderr)
+            return times
+        except Exception as e:  # noqa: BLE001
+            _fail(method, name, e)
+    print(f"warning: could not fetch stargazers for {name}", file=sys.stderr)
+    return None
 
 
 def write_if_changed(path, content):
