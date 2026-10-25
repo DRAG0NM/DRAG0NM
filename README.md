@@ -37,6 +37,11 @@
 </picture>
 
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/community-dark.svg">
+  <img src="assets/community-light.svg" alt="Community contributions: commits, pull requests, issues, reviews, discussions and accepted answers, plus repositories contributed to" width="840">
+</picture>
+
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/stars-dark.svg">
   <img src="assets/stars-light.svg" alt="Cumulative stars over time for each starred repository" width="840">
 </picture>

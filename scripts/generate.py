@@ -320,6 +320,46 @@ def commits(th, weeks, total):
     return document(W, 266, th, "Contributions over the last year", "".join(b))
 
 
+def community(th, c):
+    """c: dict from fetch_community(), or None -> placeholders."""
+    dash = "—"
+    c = c or {}
+    pr_m, pr_t = c.get("merged"), c.get("prs")
+    items = [
+        (str(c["commits"]) if "commits" in c else dash, c.get("commits"), "commits · 提交"),
+        (f"{pr_m} / {pr_t}" if pr_m is not None else dash, pr_t, "pull requests · 合并"),
+        (str(c["issues"]) if "issues" in c else dash, c.get("issues"), "issues · 议题"),
+        (str(c["reviews"]) if "reviews" in c else dash, c.get("reviews"), "reviews · 评审"),
+        (str(c["discussions"]) if "discussions" in c else dash, c.get("discussions"), "discussions · 讨论"),
+        (str(c["answers"]) if "answers" in c else dash, c.get("answers"), "answers · 采纳"),
+    ]
+    g = Rough(seed_of(c) if c else 11)
+    nums = [v for _, v, _ in items if v]
+    top = max(nums) if nums else None
+    col = (RIGHT - LEFT) / 6
+    b = [caption(th, "Community · 社区")]
+    for i, (label, val, cap) in enumerate(items):
+        x = LEFT + i * col
+        hot = top is not None and val == top and all(items[j][1] != top for j in range(i))
+        b.append(text(round(x, 1), 98, label, th, "ink", 30, "s"))
+        ln = 34 + g.n(3)
+        b.append(g.line(x + 1, 112, x + 1 + ln, 112 + g.n(1.5), th["accent"] if hot else th["ink4"],
+                        w=1.6 if hot else 1.2, op=0.95 if hot else 0.7, wob=0.8, taper=0.4))
+        b.append(text(round(x, 1), 134, cap, th, "ink3", 12, "i"))
+    repos = c.get("repos")
+    if repos is None:
+        line = "Contributed to  " + dash
+    elif repos:
+        line = "Contributed to  " + " · ".join(repos)
+    else:
+        line = "Contributed to " + dash + " nothing outside my own repositories yet"
+    b.append(text(LEFT, 176, line, th, "ink3", 14, "i"))
+    cm, dc = c.get("comments"), c.get("discussion_comments")
+    b.append(text(LEFT, 200, f"comments {dash if cm is None else cm} · discussion replies "
+                             f"{dash if dc is None else dc}", th, "ink4", 13, "i"))
+    return document(W, 220, th, "Community contributions", "".join(b))
+
+
 def stars(th, series, now):
     """series: list of (name, created:datetime, [starred_at:datetime...]) sorted by stars desc."""
     g = Rough(seed_of([[n, str(c), [str(s) for s in ss]] for n, c, ss in series]))
@@ -500,6 +540,39 @@ def fetch_star_times(login, name, token):
     return None
 
 
+Q_COMMUNITY = """query($login:String!){ user(login:$login){
+ contributionsCollection{ totalCommitContributions totalIssueContributions totalPullRequestContributions
+  totalPullRequestReviewContributions }
+ pullRequests{ totalCount } merged: pullRequests(states: MERGED){ totalCount }
+ issues{ totalCount } issueComments{ totalCount }
+ repositoryDiscussions{ totalCount } repositoryDiscussionComments{ totalCount }
+ answers: repositoryDiscussionComments(onlyAnswers: true){ totalCount }
+ repositoriesContributedTo(first: 6, contributionTypes: [COMMIT, ISSUE, PULL_REQUEST, PULL_REQUEST_REVIEW],
+  includeUserRepositories: false){ totalCount nodes{ nameWithOwner isPrivate }}}}"""
+
+
+def fetch_community(login, token):
+    """Returns a dict, or None on any failure (warning printed; never the token)."""
+    try:
+        u = gql_raise(Q_COMMUNITY, {"login": login}, token)["user"]
+        cc = u["contributionsCollection"]
+        return {
+            "commits": cc["totalCommitContributions"],
+            "prs": u["pullRequests"]["totalCount"], "merged": u["merged"]["totalCount"],
+            "issues": u["issues"]["totalCount"],
+            "reviews": cc["totalPullRequestReviewContributions"],
+            "discussions": u["repositoryDiscussions"]["totalCount"],
+            "answers": u["answers"]["totalCount"],
+            "comments": u["issueComments"]["totalCount"],
+            "discussion_comments": u["repositoryDiscussionComments"]["totalCount"],
+            "repos": [n["nameWithOwner"] for n in u["repositoriesContributedTo"]["nodes"]
+                      if not n["isPrivate"]][:4],
+        }
+    except Exception as e:  # noqa: BLE001
+        print(f"warning: community query failed ({type(e).__name__}: {str(e)[:200]})", file=sys.stderr)
+        return None
+
+
 def write_if_changed(path, content):
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return False
@@ -542,6 +615,7 @@ def main():
             series.append((r["name"], parse(r["createdAt"]), sorted(times)))
     series.sort(key=lambda s: (-len(s[2]), s[0]))
 
+    comm = fetch_community(login, token)
     now = dt.datetime.now(dt.timezone.utc)
     global FONT_REG, FONT_ITA
     FONT_REG, FONT_ITA = b64("STIX-VF.woff2"), b64("STIX-Italic-VF.woff2")
@@ -554,11 +628,15 @@ def main():
             "footer": footer(th),
             "languages": languages(th, langs),
             "commits": commits(th, weeks, cal["totalContributions"]),
+            "community": community(th, comm),
             "stars": stars(th, series, now),
         }
         for name, svg in out.items():
             if name == "stars" and stars_failed:
                 print("warning: stars could not be fetched; keeping existing stars SVGs", file=sys.stderr)
+                continue
+            if name == "community" and comm is None and (ASSETS / f"{name}-{mode}.svg").exists():
+                print("warning: community data unavailable; keeping existing community SVGs", file=sys.stderr)
                 continue
             if write_if_changed(ASSETS / f"{name}-{mode}.svg", svg):
                 changed.append(f"{name}-{mode}.svg")
