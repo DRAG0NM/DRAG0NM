@@ -214,10 +214,44 @@ def header(th, seed):
     g = Rough(seed)
     b = [text(LEFT, 98, "Drag0nM", th, "ink", 60, "i"),
          text(LEFT + 2, 136, "但行好事，莫问前程", th, "ink2", 17, "s", extra='letter-spacing="2"'),
-         g.line(LEFT + 2, 162, LEFT + 50, 162, th["ink3"], w=1.2, op=0.8, wob=0.8)]
+         g.line(LEFT + 2, 162, LEFT + 50, 162, th["ink3"], w=1.2, op=0.8, wob=0.8),
+         text(LEFT + 2, 196, "写一点工具，也写一点字。", th, "ink3", 15, "s")]
     b.append(f'<path transform="rotate(-4 705 96) translate(612 112)" d="{MONTAGE_PATH}" '
              f'fill="{th["accent"]}"/>')
-    return document(W, 200, th, "Drag0nM", "".join(b))
+    return document(W, 232, th, "Drag0nM", "".join(b))
+
+
+WORKS = [
+    ("Pare", "AI disk investigator for Windows"),
+    ("astro-theme-pianpker", "multilingual Astro blog theme, quiet reading"),
+    ("sports-eval-core", "local-first, auditable sports and recovery trends"),
+    ("AutoTune-Bot", "PID tuning assistant for inverted-pendulum simulation"),
+    ("落纸之间", "notes and essays, drablog.pages.dev"),
+]
+
+
+def work(th, idx):
+    name, desc = WORKS[idx]
+    g = Rough(100 + idx)
+    first = idx == 0
+    y = 78 if first else 32
+    b = []
+    if first:
+        b.append(caption(th, "Works · 近作"))
+        b.append(g.stroke([(24.5, y - 5.5), (28.5, y - 6.2), (31.5, y - 5.4)], th["accent"],
+                          w=5.5, op=0.95, wob=0.4, passes=1))
+    b.append(f'<text x="{LEFT}" y="{y}">'
+             f'<tspan class="s" font-size="17" fill="{th["ink"]}">{escape(name)}</tspan>'
+             f'<tspan class="s" font-size="14" fill="{th["ink4"]}" dx="12">—</tspan>'
+             f'<tspan class="i" font-size="14" fill="{th["ink3"]}" dx="10">{escape(desc)}</tspan></text>')
+    return document(W, 98 if first else 52, th, f"{name} — {desc}", "".join(b))
+
+
+def footer(th):
+    g = Rough(3)
+    b = [g.line(LEFT + 2, 24, LEFT + 50, 24, th["ink4"], w=1.2, op=0.8, wob=0.8),
+         text(RIGHT, 28, "© 2026 Drag0nM · Built with ink and GitHub Actions", th, "ink4", 13, "i", "end")]
+    return document(W, 44, th, "Footer", "".join(b))
 
 
 def languages(th, langs):
@@ -459,6 +493,8 @@ def main():
     for mode, th in THEMES.items():
         out = {
             "header": header(th, 1),
+            **{f"work-{i + 1}": work(th, i) for i in range(len(WORKS))},
+            "footer": footer(th),
             "languages": languages(th, langs),
             "commits": commits(th, weeks, cal["totalContributions"]),
             "stars": stars(th, series, now),
