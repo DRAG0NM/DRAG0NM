@@ -12,10 +12,14 @@ import os
 import random
 import sys
 import time
+import urllib.error
 import urllib.request
 import zlib
 from pathlib import Path
 from xml.sax.saxutils import escape
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from montage_path import MONTAGE_PATH  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
@@ -211,20 +215,8 @@ def header(th, seed):
     b = [text(LEFT, 98, "Drag0nM", th, "ink", 60, "i"),
          text(LEFT + 2, 136, "但行好事，莫问前程", th, "ink2", 17, "s", extra='letter-spacing="2"'),
          g.line(LEFT + 2, 162, LEFT + 50, 162, th["ink3"], w=1.2, op=0.8, wob=0.8)]
-    cx, cy, h = 730, 96, 39
-    a = th["accent"]
-    seal = []
-    corners = [(-h, -h), (h, -h), (h, h), (-h, h)]
-    for i in range(4):
-        (x1, y1), (x2, y2) = corners[i], corners[(i + 1) % 4]
-        seal.append(g.line(cx + x1, cy + y1, cx + x2, cy + y2, a, w=3.4,
-                           op=g.r.uniform(0.7, 0.95), wob=1.4))
-    seal.append(f'<text x="{cx}" y="{cy + 19}" class="s" font-size="54" fill="{a}" '
-                f'text-anchor="middle" opacity="0.88">龍</text>')
-    for _ in range(16):  # worn ink specks
-        seal.append(f'<circle cx="{cx + g.r.uniform(-h, h):.1f}" cy="{cy + g.r.uniform(-h, h):.1f}" '
-                    f'r="{g.r.uniform(0.5, 1.6):.2f}" fill="{th["bg"]}" opacity="0.85"/>')
-    b.append(f'<g transform="rotate(-4 {cx} {cy})">{"".join(seal)}</g>')
+    b.append(f'<path transform="rotate(-4 705 96) translate(612 112)" d="{MONTAGE_PATH}" '
+             f'fill="{th["accent"]}"/>')
     return document(W, 200, th, "Drag0nM", "".join(b))
 
 
@@ -384,22 +376,31 @@ def parse(s):
 def fetch_star_times(login, name, token):
     times, page = [], 1
     while True:
-        last = None
-        for attempt in range(3):
-            try:
-                req = urllib.request.Request(
-                    f"https://api.github.com/repos/{login}/{name}/stargazers?per_page=100&page={page}",
-                    headers={"Accept": "application/vnd.github.star+json",
-                             "Authorization": f"Bearer {token}",
-                             "User-Agent": "profile-generator",
-                             "X-GitHub-Api-Version": "2022-11-28"})
-                with urllib.request.urlopen(req, timeout=60) as r:
-                    items = json.load(r)
+        url = f"https://api.github.com/repos/{login}/{name}/stargazers?per_page=100&page={page}"
+        items, last = None, None
+        # The Actions token gets 403 on this endpoint; public repos work unauthenticated.
+        for use_token in (True, False):
+            hdr = {"Accept": "application/vnd.github.star+json",
+                   "User-Agent": "profile-generator",
+                   "X-GitHub-Api-Version": "2022-11-28"}
+            if use_token and token:
+                hdr["Authorization"] = f"Bearer {token}"
+            for attempt in range(3):
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=60) as r:
+                        items = json.load(r)
+                    break
+                except urllib.error.HTTPError as e:
+                    last = e
+                    if e.code in (401, 403):
+                        break
+                    time.sleep(2 * (attempt + 1))
+                except Exception as e:  # noqa: BLE001
+                    last = e
+                    time.sleep(2 * (attempt + 1))
+            if items is not None:
                 break
-            except Exception as e:  # noqa: BLE001
-                last = e
-                time.sleep(2 * (attempt + 1))
-        else:
+        if items is None:
             print(f"warning: could not fetch stargazers for {name}: {last}", file=sys.stderr)
             return None
         times += [parse(i["starred_at"]) for i in items]
@@ -439,11 +440,13 @@ def main():
             weeks.append((dt.date.fromisoformat(days[0]["date"]), sum(d["contributionCount"] for d in days)))
     weeks = weeks[-52:]
 
-    series = []
+    series, stars_failed = [], False
     for r in repos:
         if r["isPrivate"] or r["stargazerCount"] < 1:
             continue
         times = fetch_star_times(login, r["name"], token)
+        if not times:
+            stars_failed = True
         if times:
             series.append((r["name"], parse(r["createdAt"]), sorted(times)))
     series.sort(key=lambda s: (-len(s[2]), s[0]))
@@ -461,6 +464,9 @@ def main():
             "stars": stars(th, series, now),
         }
         for name, svg in out.items():
+            if name == "stars" and stars_failed:
+                print("warning: stars could not be fetched; keeping existing stars SVGs", file=sys.stderr)
+                continue
             if write_if_changed(ASSETS / f"{name}-{mode}.svg", svg):
                 changed.append(f"{name}-{mode}.svg")
     print("updated:", ", ".join(changed) if changed else "nothing changed")
