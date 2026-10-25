@@ -27,26 +27,6 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/languages-dark.svg">
-  <img src="assets/languages-light.svg" alt="Most used languages across my public repositories" width="840">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/commits-dark.svg">
-  <img src="assets/commits-light.svg" alt="Weekly contributions over the last year, drawn as a line" width="840">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/community-dark.svg">
-  <img src="assets/community-light.svg" alt="Community contributions: commits, pull requests, issues, reviews, discussions and accepted answers, plus repositories contributed to" width="840">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/stars-dark.svg">
-  <img src="assets/stars-light.svg" alt="Cumulative stars over time for each starred repository" width="840">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/footer-dark.svg">
-  <img src="assets/footer-light.svg" alt="© 2026 Drag0nM · Built with ink and GitHub Actions" width="840">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/stats-dark.svg">
+  <img src="assets/stats-light.svg" alt="Most used languages, a year of weekly contributions, community contributions (commits, pull requests, issues, reviews), and cumulative star history per repository" width="840">
 </picture>

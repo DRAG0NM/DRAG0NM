@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the hand-drawn profile SVGs (header, languages, commits, stars).
+"""Generate the hand-drawn profile SVGs (header, works, and one merged stats image).
 
 Python 3.11, standard library only.
 Env: GITHUB_TOKEN (required), PROFILE_USER (default DRAG0NM), INCLUDE_PRIVATE=1 (optional).
@@ -247,20 +247,20 @@ def work(th, idx):
     return document(W, 98 if first else 52, th, f"{name} — {desc}", "".join(b))
 
 
-def footer(th):
+def footer_body(th):
     g = Rough(3)
     b = [g.line(LEFT + 2, 24, LEFT + 50, 24, th["ink4"], w=1.2, op=0.8, wob=0.8),
          text(RIGHT, 28, "© 2026 Drag0nM · Built with ink and GitHub Actions", th, "ink4", 13, "i", "end")]
-    return document(W, 44, th, "Footer", "".join(b))
+    return "".join(b), 44
 
 
-def languages(th, langs):
+def languages_body(th, langs):
     top = langs[:6]
     g = Rough(seed_of(top))
     b = [caption(th, "Languages · 语言")]
     if not top:
         b.append(text(LEFT, 86, "No code yet.", th, "ink3", 15))
-        return document(W, 120, th, "Languages", "".join(b))
+        return "".join(b), 120
     total = sum(v for _, v in langs)
     shares = [v / total for _, v in top]
     mx = max(shares)
@@ -276,10 +276,10 @@ def languages(th, langs):
         b.append(g.stroke(pts, col, w=8.5, op=ops[i], wob=0.7, taper=min(0.5, 10 / ln)))
         b.append(text(round(x0 + ln + 14, 1), y, f"{s * 100:.1f}%", th, "ink3", 14, "i"))
     h = 78 + len(top) * rowh + 6
-    return document(W, h, th, "Languages by bytes", "".join(b))
+    return "".join(b), h
 
 
-def commits(th, weeks, total):
+def commits_body(th, weeks, total):
     """weeks: list of (first_day:date, count) for the last 52 weeks."""
     first = next((i for i, (_, c) in enumerate(weeks) if c > 0), 0)
     start = min(max(0, first - 4), len(weeks) - 16)
@@ -317,10 +317,10 @@ def commits(th, weeks, total):
                       "i", "start" if dirn > 0 else "end"))
     b.append(text(RIGHT, 252, (f"{total:,} contributions since {weeks[0][0].strftime('%b %Y')}" if trimmed
                               else f"{total:,} contributions in the last year"), th, "ink3", 13, "i", "end"))
-    return document(W, 266, th, "Contributions over the last year", "".join(b))
+    return "".join(b), 266
 
 
-def community(th, c):
+def community_body(th, c):
     """c: dict from fetch_community(), or None -> placeholders."""
     dash = "—"
     c = c or {}
@@ -357,16 +357,16 @@ def community(th, c):
     cm, dc = c.get("comments"), c.get("discussion_comments")
     b.append(text(LEFT, 200, f"comments {dash if cm is None else cm} · discussion replies "
                              f"{dash if dc is None else dc}", th, "ink4", 13, "i"))
-    return document(W, 220, th, "Community contributions", "".join(b))
+    return "".join(b), 220
 
 
-def stars(th, series, now):
+def stars_body(th, series, now):
     """series: list of (name, created:datetime, [starred_at:datetime...]) sorted by stars desc."""
     g = Rough(seed_of([[n, str(c), [str(s) for s in ss]] for n, c, ss in series]))
     b = [caption(th, "Stars · 星迹")]
     if not series:
         b.append(text(LEFT, 90, "No stars yet — 暂无星迹。", th, "ink3", 15, "i"))
-        return document(W, 130, th, "Stars", "".join(b))
+        return "".join(b), 130
     series = series[:6]
     t0 = min(c for _, c, _ in series)
     end = dt.datetime(now.year + (now.month == 12), now.month % 12 + 1, 1, tzinfo=dt.timezone.utc)
@@ -414,7 +414,29 @@ def stars(th, series, now):
     for x, t, anchor in ticks:
         lab = t.strftime("%b %Y") if anchor != "middle" else str(t.year)
         b.append(text(round(x, 1), base + 25, lab, th, "ink3", 12, "i", anchor))
-    return document(W, 236, th, "Stars over time", "".join(b))
+    return "".join(b), 236
+
+
+STATS_LABEL = ("Most used languages, a year of weekly contributions, community contributions, "
+               "and cumulative stars per repository; © 2026 Drag0nM")
+GAP = 22  # extra vertical space between stacked sections
+
+
+def stats(th, langs, weeks, total, comm, series, now):
+    """One continuous paper with all display-only sections stacked."""
+    parts = [languages_body(th, langs), commits_body(th, weeks, total), community_body(th, comm),
+             stars_body(th, series, now), footer_body(th)]
+    g = Rough(5)
+    out, y = [], 0
+    for i, (body, h) in enumerate(parts):
+        if i:
+            y += GAP
+            if i < len(parts) - 1:  # the footer draws its own short rule
+                out.append(g.line(LEFT + 2, y - GAP // 2, LEFT + 50, y - GAP // 2, th["ink4"],
+                                  w=1.2, op=0.8, wob=0.8))
+        out.append(f'<g transform="translate(0,{y})">{body}</g>')
+        y += h
+    return document(W, y, th, STATS_LABEL, "".join(out))
 
 
 # ---------------------------------------------------------------- data
@@ -580,6 +602,21 @@ def write_if_changed(path, content):
     return True
 
 
+DATA = ASSETS / "data"
+
+
+def write_json(name, obj):
+    DATA.mkdir(exist_ok=True)
+    write_if_changed(DATA / name, json.dumps(obj, sort_keys=True, indent=1, ensure_ascii=False) + "\n")
+
+
+def read_json(name):
+    try:
+        return json.loads((DATA / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def main():
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
@@ -615,7 +652,22 @@ def main():
             series.append((r["name"], parse(r["createdAt"]), sorted(times)))
     series.sort(key=lambda s: (-len(s[2]), s[0]))
 
+    if stars_failed:
+        cached = read_json("stars.json")
+        if cached is not None:
+            print("warning: star fetch failed; using assets/data/stars.json", file=sys.stderr)
+            series = [(c["name"], parse(c["createdAt"]), [parse(t) for t in c["starredAt"]]) for c in cached]
+    else:
+        write_json("stars.json", [{"name": n, "createdAt": c.isoformat(),
+                                   "starredAt": [t.isoformat() for t in ss]} for n, c, ss in series])
+
     comm = fetch_community(login, token)
+    if comm is None:
+        comm = read_json("community.json")
+        if comm is not None:
+            print("warning: community query failed; using assets/data/community.json", file=sys.stderr)
+    else:
+        write_json("community.json", comm)
     now = dt.datetime.now(dt.timezone.utc)
     global FONT_REG, FONT_ITA
     FONT_REG, FONT_ITA = b64("STIX-VF.woff2"), b64("STIX-Italic-VF.woff2")
@@ -625,19 +677,9 @@ def main():
         out = {
             "header": header(th, 1),
             **{f"work-{i + 1}": work(th, i) for i in range(len(WORKS))},
-            "footer": footer(th),
-            "languages": languages(th, langs),
-            "commits": commits(th, weeks, cal["totalContributions"]),
-            "community": community(th, comm),
-            "stars": stars(th, series, now),
+            "stats": stats(th, langs, weeks, cal["totalContributions"], comm, series, now),
         }
         for name, svg in out.items():
-            if name == "stars" and stars_failed:
-                print("warning: stars could not be fetched; keeping existing stars SVGs", file=sys.stderr)
-                continue
-            if name == "community" and comm is None and (ASSETS / f"{name}-{mode}.svg").exists():
-                print("warning: community data unavailable; keeping existing community SVGs", file=sys.stderr)
-                continue
             if write_if_changed(ASSETS / f"{name}-{mode}.svg", svg):
                 changed.append(f"{name}-{mode}.svg")
     print("updated:", ", ".join(changed) if changed else "nothing changed")
