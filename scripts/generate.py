@@ -377,13 +377,35 @@ Q_MAIN = """query($login:String!){ user(login:$login){ createdAt
  repositories(ownerAffiliations: OWNER, isFork: false, first: 100){ nodes{ name isPrivate createdAt stargazerCount
   languages(first: 10, orderBy:{field: SIZE, direction: DESC}){ edges{ size node{ name }}}}}}}"""
 
-Q_STARS = """query($login:String!,$name:String!,$after:String){ repository(owner:$login,name:$name){
- stargazers(first:100, after:$after, orderBy:{field:STARRED_AT, direction:ASC}){
-  pageInfo{ hasNextPage endCursor } edges{ starredAt }}}}"""
-
-
 def parse(s):
     return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def fetch_star_times(login, name, token):
+    times, page = [], 1
+    while True:
+        last = None
+        for attempt in range(3):
+            try:
+                req = urllib.request.Request(
+                    f"https://api.github.com/repos/{login}/{name}/stargazers?per_page=100&page={page}",
+                    headers={"Accept": "application/vnd.github.star+json",
+                             "Authorization": f"Bearer {token}",
+                             "User-Agent": "profile-generator",
+                             "X-GitHub-Api-Version": "2022-11-28"})
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    items = json.load(r)
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(2 * (attempt + 1))
+        else:
+            print(f"warning: could not fetch stargazers for {name}: {last}", file=sys.stderr)
+            return None
+        times += [parse(i["starred_at"]) for i in items]
+        if len(items) < 100:
+            return times
+        page += 1
 
 
 def write_if_changed(path, content):
@@ -421,13 +443,7 @@ def main():
     for r in repos:
         if r["isPrivate"] or r["stargazerCount"] < 1:
             continue
-        times, after = [], None
-        while True:
-            d = gql(Q_STARS, {"login": login, "name": r["name"], "after": after}, token)["repository"]["stargazers"]
-            times += [parse(e["starredAt"]) for e in d["edges"]]
-            if not d["pageInfo"]["hasNextPage"]:
-                break
-            after = d["pageInfo"]["endCursor"]
+        times = fetch_star_times(login, r["name"], token)
         if times:
             series.append((r["name"], parse(r["createdAt"]), sorted(times)))
     series.sort(key=lambda s: (-len(s[2]), s[0]))
