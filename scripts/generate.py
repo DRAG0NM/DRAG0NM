@@ -221,17 +221,59 @@ def header(th, seed):
     return document(W, 232, th, "Drag0nM", "".join(b))
 
 
-WORKS = [
-    ("Pare", "AI disk investigator for Windows"),
-    ("astro-theme-pianpker", "multilingual Astro blog theme, quiet reading"),
-    ("sports-eval-core", "local-first, auditable sports and recovery trends"),
-    ("AutoTune-Bot", "PID tuning assistant for inverted-pendulum simulation"),
-    ("落纸之间", "notes and essays, drablog.pages.dev"),
-]
+# Filled in main(): the most recently pushed public repos, then the blog, which is pinned last.
+RECENT_REPOS = 4
+BLOG = ("落纸之间", "notes and essays, drablog.pages.dev", "https://drablog.pages.dev/")
+WORKS = []
+
+
+def short_desc(name, desc, limit=64):
+    """A one-line blurb: drop a leading "Name — " restatement, cut at a word near the limit."""
+    desc = (desc or "").strip()
+    if " — " in desc and desc.split(" — ", 1)[0].lower().startswith(name.lower()):
+        desc = desc.split(" — ", 1)[1]
+    desc = desc.split(". ", 1)[0].rstrip(".")
+    for article in ("A ", "An ", "The "):
+        if desc.startswith(article):
+            desc = desc[len(article):]
+    if desc[1:2].islower():  # keep acronyms like "AI" as they are
+        desc = desc[:1].lower() + desc[1:]
+    if len(desc) > limit:
+        head = desc[:limit]
+        cut = head.rsplit(", ", 1)[0] if ", " in head else head.rsplit(" ", 1)[0] + "…"
+        desc = cut.rstrip(",;:")
+    return desc
+
+
+def recent_works(repos, login):
+    pub = [r for r in repos if not r["isPrivate"] and not r["isArchived"] and r["name"].lower() != login.lower()]
+    pub.sort(key=lambda r: r["pushedAt"], reverse=True)
+    return [(r["name"], short_desc(r["name"], r["description"]), r["url"]) for r in pub[:RECENT_REPOS]] + [BLOG]
+
+
+def works_html(works):
+    rows = []
+    for i, (name, desc, url) in enumerate(works, 1):
+        alt = escape(f"{name} — {desc}", {"\"": "&quot;"})
+        rows.append(f'''<a href="{url}"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/work-{i}-dark.svg">
+  <img src="assets/work-{i}-light.svg" alt="{alt}" width="840">
+</picture></a><br>''')
+    return "<p>\n" + "\n".join(rows) + "\n</p>"
+
+
+def write_readme_works(works):
+    """Rewrite the block between the works markers in README.md."""
+    path = ROOT / "README.md"
+    text_ = path.read_text(encoding="utf-8")
+    start, end = "<!-- works:start -->", "<!-- works:end -->"
+    i, j = text_.index(start) + len(start), text_.index(end)
+    new = text_[:i] + "\n" + works_html(works) + "\n" + text_[j:]
+    return write_if_changed(path, new)
 
 
 def work(th, idx):
-    name, desc = WORKS[idx]
+    name, desc, _ = WORKS[idx]
     g = Rough(100 + idx)
     first = idx == 0
     y = 78 if first else 32
@@ -480,7 +522,7 @@ def gql(query, variables, token):
 
 Q_MAIN = """query($login:String!){ user(login:$login){ createdAt
  contributionsCollection{ contributionCalendar{ totalContributions weeks{ contributionDays{ date contributionCount }}}}
- repositories(ownerAffiliations: OWNER, isFork: false, first: 100){ nodes{ name isPrivate createdAt stargazerCount
+ repositories(ownerAffiliations: OWNER, isFork: false, first: 100){ nodes{ name isPrivate isArchived createdAt pushedAt stargazerCount description url
   languages(first: 10, orderBy:{field: SIZE, direction: DESC}){ edges{ size node{ name }}}}}}}"""
 
 def parse(s):
@@ -633,6 +675,8 @@ def main():
             lang[e["node"]["name"]] = lang.get(e["node"]["name"], 0) + e["size"]
     langs = sorted(lang.items(), key=lambda kv: (-kv[1], kv[0]))
 
+    WORKS[:] = recent_works(user["repositories"]["nodes"], login)
+
     cal = user["contributionsCollection"]["contributionCalendar"]
     weeks = []
     for w in cal["weeks"]:
@@ -682,6 +726,8 @@ def main():
         for name, svg in out.items():
             if write_if_changed(ASSETS / f"{name}-{mode}.svg", svg):
                 changed.append(f"{name}-{mode}.svg")
+    if write_readme_works(WORKS):
+        changed.append("README.md")
     print("updated:", ", ".join(changed) if changed else "nothing changed")
 
 
