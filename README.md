@@ -5,21 +5,21 @@
 
 <!-- works:start -->
 <p>
-<a href="https://github.com/DRAG0NM/astro-theme-interleaf"><picture>
+<a href="https://github.com/DRAG0NM/SiteMind"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/work-1-dark.svg">
-  <img src="assets/work-1-light.svg" alt="astro-theme-interleaf — multilingual Astro blog theme for quiet reading" width="840">
+  <img src="assets/work-1-light.svg" alt="SiteMind — siteMind · 设施资产认知智能体：把设备手册、规程、电价政策与历史工单读成带版本的知识，由一个主 Agent…" width="840">
+</picture></a><br>
+<a href="https://github.com/DRAG0NM/astro-theme-interleaf"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/work-2-dark.svg">
+  <img src="assets/work-2-light.svg" alt="astro-theme-interleaf — multilingual Astro blog theme for quiet reading" width="840">
 </picture></a><br>
 <a href="https://github.com/DRAG0NM/heartwork"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/work-2-dark.svg">
-  <img src="assets/work-2-light.svg" alt="heartwork — a local-first health canvas measured against your own baseline" width="840">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/work-3-dark.svg">
+  <img src="assets/work-3-light.svg" alt="heartwork — a local-first health canvas measured against your own baseline" width="840">
 </picture></a><br>
 <a href="https://github.com/DRAG0NM/AutoTune-Bot"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/work-3-dark.svg">
-  <img src="assets/work-3-light.svg" alt="AutoTune-Bot — AGNES/AGH PID tuning assistant for second-order…" width="840">
-</picture></a><br>
-<a href="https://github.com/DRAG0NM/Pare"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/work-4-dark.svg">
-  <img src="assets/work-4-light.svg" alt="Pare — AI disk investigator for Windows" width="840">
+  <img src="assets/work-4-light.svg" alt="AutoTune-Bot — AGNES/AGH PID tuning assistant for second-order…" width="840">
 </picture></a><br>
 <a href="https://drablog.pages.dev/"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/work-5-dark.svg">
